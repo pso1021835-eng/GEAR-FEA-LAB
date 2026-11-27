@@ -23,13 +23,16 @@ function sample([radialLayers,fillet,involute,widthLayers=6],sectorTeeth=spatial
 }
 const levels=spatial?[[9,20,12,8],[11,24,14,10],[13,30,16,12]]:
   refined?[[6,18,12,8],[7,18,12,8],[8,18,12,8]]:[[2,3,4],[2,4,6],[3,6,9]];
-sample(levels[0]);
+const coarse=sample(levels[0]);
 const middle=sample(levels[1]),fine=sample(levels[2]);
 const boundary={stressTolerance:.05,displacementTolerance:.05};
 const {filletElementSpan,target}=fine.meshMetrics;
 const result={mesh:compare(middle,fine),filletSize:{filletElementSpan,target,passes:filletElementSpan<=target}};
 if(!meshOnly){
-  const comparable=refined||spatial?fine:middle,sectorLevel=refined||spatial?levels[2]:levels[1];
+  // The spatial profile already meets the fillet size target at its first
+  // level. Keep the sector comparisons at that common resolution.
+  const comparable=spatial?coarse:refined?fine:middle;
+  const sectorLevel=spatial?levels[0]:refined?levels[2]:levels[1];
   if(spatial){
     result.sector=compare(sample(sectorLevel,5),comparable,boundary);
     result.extendedSector=compare(comparable,sample(sectorLevel,9),boundary);
