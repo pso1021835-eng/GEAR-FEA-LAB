@@ -5,6 +5,10 @@ const mesh=M.box(40,10,10,4,1,1),faces=M.boundary(mesh),end=faces.filter(f=>f.no
 const force=F.traction(mesh,end,[100,0,0]),fixed=[];
 mesh.nodes.forEach(([x,y,z],i)=>{if(x===0)fixed.push(3*i);if(x===0&&y===0&&z===-5)fixed.push(3*i+1,3*i+2);if(x===0&&y===10&&z===-5)fixed.push(3*i+2);});
 const result=F.solve(F.assemble(mesh,206000,.3),force,fixed);
+F.checkConstraints(mesh,fixed);
+assert.throws(()=>F.checkConstraints(mesh,[0,1,2]),/rigid-body mode/);
+const block=F.solve(F.assemble(mesh,206000,.3),force,fixed,{preconditioner:'block-jacobi'});
+assert(block.displacements.every((x,i)=>Math.abs(x-result.displacements[i])<1e-8));
 const stress=F.stress(mesh,result.displacements,206000,.3);
 for(const s of stress){assert(Math.abs(s.stress[0]-100)<.1);assert(s.stress.slice(1).every(x=>Math.abs(x)<.1));assert(Math.abs(s.vonMises-100)<.1);}
 mesh.nodes.forEach(([x,y,z],i)=>{assert(Math.abs(result.displacements[3*i]-100*x/206000)<1e-8);assert(Math.abs(result.displacements[3*i+1]+.3*100*y/206000)<1e-8);assert(Math.abs(result.displacements[3*i+2]+.3*100*(z+5)/206000)<1e-8);});
@@ -74,5 +78,7 @@ const c=A.run({z:20},{bore:20},{widthLayers:2,counts:{root:1,fillet:4,involute:8
 assert(c.residual<1e-8&&c.forceError<.005&&c.momentError<.005);
 assert(c.root.central.maxPrincipal>0&&c.root.full.maxPrincipal>=c.root.central.maxPrincipal);
 assert(c.loadDisplacement>0&&Number.isFinite(c.loadDisplacement));
+assert(Math.abs(c.contactProbe.point[2])<1e-9);
+assert(Math.hypot(...c.contactProbe.point.map((x,i)=>x-c.load.contact.point[i]))<1e-3);
 const comparison=c.root.central.maxPrincipal/144.67427765268215-1;
 console.log('C equilibrium passed, root MPa and hand-reference deviation:',c.root.central.maxPrincipal,comparison);

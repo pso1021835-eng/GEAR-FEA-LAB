@@ -7,7 +7,8 @@ function sample(radialLayers,fillet,involute,sectorTeeth=5,cutFixed=false){
   console.log(JSON.stringify({radialLayers,fillet,involute,sectorTeeth,cutFixed,dofs:r.dofs,
     durationMs:Date.now()-started,iterations:r.iterations,residual:r.residual,
     rootMPa:r.root.central.maxPrincipal,filletSide:r.root.central.side,
-    displacementMm:r.loadDisplacement,forceError:r.forceError,momentError:r.momentError,
+    displacementMm:r.loadDisplacement,patchMeanDisplacementMm:r.patchMeanDisplacement,
+    forceError:r.forceError,momentError:r.momentError,
     cutTorqueNmm:r.cutTorque}));
   return r;
 }

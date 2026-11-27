@@ -77,15 +77,78 @@
     return y;
   }
   function dot(x,y){let sum=0;for(let i=0;i<x.length;i++)sum+=x[i]*y[i];return sum;}
-  function solve(A,force,fixed,{tolerance=1e-8,maxIterations=10000}={}){
+  function checkConstraints(mesh,fixed){
+    const count=mesh.nodes.length,parent=Int32Array.from({length:count},(_,i)=>i);
+    function root(i){while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i];}return i;}
+    for(const t of mesh.elements)for(const i of t)parent[root(i)]=root(t[0]);
+    const components=new Map();
+    for(let i=0;i<count;i++){const j=root(i);if(!components.has(j))components.set(j,[]);}
+    for(const dof of fixed){
+      if(!Number.isInteger(dof)||dof<0||dof>=3*count)throw Error('Invalid restraint DOF');
+      const i=Math.floor(dof/3),j=root(i),axis=dof%3;
+      const p=mesh.nodes[i].map((x,d)=>x-mesh.nodes[j][d]);
+      components.get(j).push({axis,p});
+    }
+    for(const rows of components.values()){
+      const scale=rows.reduce((max,{p})=>Math.max(max,Math.hypot(...p)),0)||1;
+      const basis=[];
+      for(const {axis,p} of rows){
+        const [x,y,z]=p.map(v=>v/scale);
+        const v=axis===0?[1,0,0,0,z,-y]:axis===1?[0,1,0,-z,0,x]:[0,0,1,y,-x,0];
+        for(const q of basis){
+          const projection=dot(v,q);
+          for(let k=0;k<6;k++)v[k]-=projection*q[k];
+        }
+        const magnitude=Math.hypot(...v);
+        if(magnitude>1e-9)basis.push(v.map(x=>x/magnitude));
+        if(basis.length===6)break;
+      }
+      if(basis.length<6)throw Error('A mesh component has an unrestrained rigid-body mode');
+    }
+  }
+  // Each elastic node has a 3x3 diagonal block. Constrained rows are replaced
+  // by identity in this preconditioner, so partial constraints remain valid.
+  function blockJacobi(A,locked,diag){
+    const blocks=new Float64Array(6*(A.size/3));
+    for(let i=0,k=0;i<A.size;i+=3,k+=6){
+      const a=locked.has(i)?1:diag[i],d=locked.has(i+1)?1:diag[i+1],f=locked.has(i+2)?1:diag[i+2];
+      const entry=(row,col)=>{
+        if(locked.has(row)||locked.has(col))return 0;
+        for(let j=A.ptr[row];j<A.ptr[row+1];j++)if(A.cols[j]===col)return A.values[j];
+        return 0;
+      };
+      const b=entry(i,i+1),c=entry(i,i+2),e=entry(i+1,i+2);
+      const cof=[d*f-e*e,c*e-b*f,b*e-c*d,a*f-c*c,b*c-a*e,a*d-b*b];
+      const det=a*cof[0]+b*cof[1]+c*cof[2];
+      if(!(det>0)||!Number.isFinite(det))throw Error('Nonpositive Jacobi block');
+      for(let j=0;j<6;j++)blocks[k+j]=cof[j]/det;
+    }
+    return (r,z)=>{
+      for(let i=0,k=0;i<A.size;i+=3,k+=6){
+        const x=r[i],y=r[i+1],w=r[i+2];
+        z[i]=blocks[k]*x+blocks[k+1]*y+blocks[k+2]*w;
+        z[i+1]=blocks[k+1]*x+blocks[k+3]*y+blocks[k+4]*w;
+        z[i+2]=blocks[k+2]*x+blocks[k+4]*y+blocks[k+5]*w;
+      }
+    };
+  }
+  function solve(A,force,fixed,{tolerance=1e-8,maxIterations=10000,preconditioner='jacobi'}={}){
     const n=A.size,locked=new Set(fixed),x=new Float64Array(n),r=Float64Array.from(force),diag=new Float64Array(n);
     if(force.length!==n||force.some(v=>!Number.isFinite(v)))throw Error('Invalid load vector');
     for(let i=0;i<n;i++){if(locked.has(i))r[i]=0;for(let k=A.ptr[i];k<A.ptr[i+1];k++)if(A.cols[k]===i)diag[i]=A.values[k];if(!(diag[i]>0))throw Error('Missing stiffness');}
-    const z=Float64Array.from(r,(v,i)=>v/diag[i]),p=z.slice(),q=new Float64Array(n);
+    let precondition;
+    switch(preconditioner){
+      case 'jacobi':precondition=(r,z)=>{for(let i=0;i<n;i++)z[i]=r[i]/diag[i];};break;
+      case 'block-jacobi':precondition=blockJacobi(A,locked,diag);break;
+      default:throw Error('Unknown preconditioner');
+    }
+    const z=new Float64Array(n),q=new Float64Array(n);
+    precondition(r,z);
+    const p=z.slice();
     let rz=dot(r,z),norm=Math.sqrt(dot(r,r)),relativeResidual=norm?1:0,iterations=0;
     while(relativeResidual>tolerance&&iterations<maxIterations){multiply(A,p,q);for(const i of locked)q[i]=0;const pq=dot(p,q);if(!(pq>0))throw Error('Nonpositive stiffness / rigid mode');const alpha=rz/pq;
       for(let i=0;i<n;i++){x[i]+=alpha*p[i];r[i]-=alpha*q[i];}iterations++;relativeResidual=Math.sqrt(dot(r,r))/norm;if(relativeResidual<=tolerance)break;
-      for(let i=0;i<n;i++)z[i]=r[i]/diag[i];const next=dot(r,z),beta=next/rz;for(let i=0;i<n;i++)p[i]=z[i]+beta*p[i];rz=next;
+      precondition(r,z);const next=dot(r,z),beta=next/rz;for(let i=0;i<n;i++)p[i]=z[i]+beta*p[i];rz=next;
     }
     if(relativeResidual>tolerance)throw Error('PCG did not converge: '+relativeResidual);
     const reactions=multiply(A,x).map((v,i)=>v-force[i]);
@@ -131,5 +194,5 @@
       for(let k=0;k<6;k++)for(let d=0;d<3;d++)f[3*face.nodes[k]+d]+=N[k]*q[d]*weight;
     }return f;
   }
-  const api={material,geometry,mapping,isCurved,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
+  const api={material,geometry,mapping,isCurved,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe,checkConstraints};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
