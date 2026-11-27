@@ -77,15 +77,20 @@
       lastR = Math.max(lastR, R);
       out.push(q);
     }
-    return { g, pts: out.map(q => ({ x: q.g[0], y: q.g[1], part: q.part })), undercut };
+    // 연속 중복점 제거 (공구 이끝 둥글기 한계에서 이끝선 길이 0 → 같은 점 반복)
+    const pts = [];
+    for (const q of out) { const l = pts[pts.length - 1]; if (!l || Math.hypot(q.g[0] - l.x, q.g[1] - l.y) > 1e-9 * g.m) pts.push({ x: q.g[0], y: q.g[1], part: q.part }); }
+    return { g, pts, undercut };
   }
 
   /** 반 이홈 점열을 부위별 호 길이 등간격으로 줄임 (표시·메시용). counts: {root, fillet, involute} */
   function resampleHalf(pts, counts) {
     const out = [];
     for (const part of ['root', 'fillet', 'involute']) {
-      const seg = pts.filter(q => q.part === part);
-      if (seg.length < 2) { out.push(...seg); continue; }
+      const own = pts.filter(q => q.part === part);
+      if (!own.length) continue;
+      const seg = out.length ? [out[out.length - 1], ...own] : own;   // 앞 부위 끝점(=전이 접점)에서 시작
+      if (seg.length < 2) { out.push(...own); continue; }
       const L = [0]; for (let i = 1; i < seg.length; i++) L.push(L[i - 1] + Math.hypot(seg[i].x - seg[i - 1].x, seg[i].y - seg[i - 1].y));
       const n = Math.max(1, counts[part]), tot = L[L.length - 1];
       let j = 0;
@@ -155,6 +160,7 @@
   function boreHole(bore, key, n = 96) {
     const R = bore / 2;
     if (!key || !(key.w > 0) || !(key.t > 0)) return circle(0, 0, R, n, true);
+    if (key.w >= bore) throw new Error(`키홈 폭 ${key.w} mm가 보어 지름 ${bore} mm 이상입니다`);
     const hw = key.w / 2, a0 = Math.asin(Math.min(1, hw / R)), top = Math.sqrt(R * R - hw * hw) + key.t;
     // 시계 방향: 키홈 오른쪽 아래 모서리(보어와 만나는 점)에서 출발해 보어 호를 시계로 돌아 왼쪽 모서리 → 키홈 위로
     const pts = [], t1 = Math.PI / 2 - a0, t2 = -(3 * Math.PI / 2 - a0);   // 오른쪽 모서리 각 → 왼쪽 모서리 각(시계로 감소)
@@ -180,13 +186,15 @@
       const { n, pcd, d } = body.web;
       for (let i = 0; i < n; i++) { const t = Math.PI / n + 2 * Math.PI * i / n; holes.push(circle(pcd / 2 * Math.cos(t), pcd / 2 * Math.sin(t), d / 2, 48, true)); }
       if (pcd / 2 - d / 2 <= (body.bore || 0) / 2 + (body.key && body.key.t || 0)) warns.push('웨브 구멍이 보어·키홈과 겹칩니다');
-      if (2 * Math.PI * pcd / 2 / n <= d) warns.push('웨브 구멍끼리 겹칩니다');
+      if (n > 1 && 2 * (pcd / 2) * Math.sin(Math.PI / n) <= d) warns.push('웨브 구멍끼리 겹칩니다 (형상 불가)');
       inner = Math.max(inner, pcd / 2 + d / 2);
     }
     const rim = g.rf - inner;                    // 림 두께 (이뿌리원 ~ 가장 바깥 구멍)
     if (inner > 0 && rim <= 0) warns.push('구멍이 이뿌리원을 넘습니다 — 형상 불가');
     else if (inner > 0 && rim < 1.2 * h) warns.push(`림 두께 ${rim.toFixed(2)} mm < 1.2 × 이 높이(${(1.2 * h).toFixed(2)} mm) — 얇은 림은 치근 응력을 키웁니다 (ISO 6336-3 YB 영역, 기준값은 원문 확인 필요)`);
-    return { g, outer: o.points, holes, warns, rim: inner > 0 ? rim : null, undercut: o.undercut };
+    const blocking = o.undercut || warns.some(w => /형상 불가|겹칩니다/.test(w));
+    return { g, outer: o.points, holes, warns, rim: inner > 0 ? rim : null, undercut: o.undercut,
+      analyzable: !blocking };   // false면 F2 FEA에 넘기지 않음 (언더컷 경계는 포락선 교점 재구성 전까지 해석 대상 아님)
   }
 
   const api = { basic, halfSpace, resampleHalf, outline, info, involuteHalfAngle, boreHole, section };

@@ -105,7 +105,8 @@
         ['림 두께 (이뿌리원~구멍)', sec.rim == null ? '—' : f(sec.rim, 2), 'mm'], ['언더컷 한계 잇수(근사)', f(inf.zUndercutApprox, 1), '']
       ];
       out.innerHTML = `<table>${rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table>` +
-        (sec.warns.length ? `<ul class="warn">${sec.warns.map(w => `<li>${w}</li>`).join('')}</ul>` : '<p class="ok">형상 점검: 이상 없음</p>') +
+        `<p class="${sec.analyzable ? 'ok' : 'err'}">FEA 해석 대상: ${sec.analyzable ? '가능' : '불가 (아래 형상 문제 해결 필요)'}</p>` +
+        (sec.warns.length ? `<ul class="warn">${sec.warns.map(w => `<li>${w}</li>`).join('')}</ul>` : '') +
         '<p class="note">치형: 랙 공구 창성(인벌류트 + 트로코이드 필렛). 스퍼 기어만 지원(헬리컬은 이후 단계). 응력 해석(FEA)은 다음 단계에서 추가됩니다.</p>';
     } catch (e) {
       out.innerHTML = `<p class="err">형상 오류: ${e.message}</p>`;

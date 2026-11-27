@@ -58,5 +58,22 @@ ok(G.info({ m: 2, z: 8 }).zUndercutApprox > 8, '언더컷 한계 잇수 근사')
   ok(s3.warns.some(w => /언더컷/.test(w)), '언더컷 경고');
 }
 
+// F1-REV 회귀: 구멍 현 간격, 키홈 폭 오류, 공구 둥글기 한계 중복점, 재샘플 전이점 보존, 해석 가능 플래그
+{
+  const w = G.section({ m: 2, z: 30 }, { web: { n: 4, pcd: 20, d: 15 } });
+  ok(w.warns.some(x => /웨브 구멍끼리/.test(x)) && !w.analyzable, '웨브 구멍 현 간격 겹침 검출');
+  try { G.boreHole(10, { w: 11, t: 2 }); ok(false, '키홈 폭 오류 미검출'); } catch (e) { ok(/키홈 폭/.test(e.message), '키홈 폭 메시지'); }
+  const a = 20 * Math.PI / 180, rhoMax = (Math.PI / 4 - 1.25 * Math.tan(a)) / (1 / Math.cos(a) - Math.tan(a));
+  const hs = G.halfSpace({ m: 2, z: 30, rho: rhoMax * (1 - 1e-12) }).pts;
+  let dup = 0; for (let i = 1; i < hs.length; i++) if (Math.hypot(hs[i].x - hs[i - 1].x, hs[i].y - hs[i - 1].y) < 1e-9) dup++;
+  ok(dup === 0, '둥글기 한계 중복점 ' + dup);
+  const raw = G.halfSpace({ m: 2, z: 30 }).pts, rs = G.resampleHalf(raw, { root: 3, fillet: 12, involute: 20 });
+  const lastOf = part => { const q = raw.filter(p => p.part === part); return q[q.length - 1]; };
+  for (const part of ['root', 'fillet']) { const t = lastOf(part); ok(rs.some(p => Math.hypot(p.x - t.x, p.y - t.y) < 1e-9), part + ' 전이점 보존'); }
+  ok(rs.length === 1 + 3 + 12 + 20, '재샘플 점 수 ' + rs.length);
+  ok(!G.section({ m: 2, z: 8 }).analyzable, '언더컷은 해석 불가');
+  ok(G.section({ m: 2, z: 30 }, { bore: 20, key: { w: 6, t: 2.8 } }).analyzable, '정상 형상 해석 가능');
+}
+
 console.log(fail ? `gear_test: ${fail} 실패` : 'gear_test: 모두 통과');
 process.exit(fail ? 1 : 0);
