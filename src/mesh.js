@@ -56,6 +56,35 @@
     }
     return out;
   }
-  const api={edges,determinant,elevate,extrude,box,boundary};
+  function gear(section,{radialLayers=4,widthLayers=6}={}){
+    if(!section.analyzable)throw Error('Geometry not analyzable');
+    if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
+    if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
+    const hole=section.holes[0],radius=Math.hypot(hole[0].x,hole[0].y),tol=section.g.m*1e-8;
+    if(!(radius>0)||hole.some(p=>Math.abs(Math.hypot(p.x,p.y)-radius)>tol))throw Error('Keyways and noncircular bores need constrained triangulation');
+    const angle=-(Math.PI/2+Math.PI/section.g.z),c=Math.cos(angle),s=Math.sin(angle);
+    const outer=section.outer.map(p=>({x:c*p.x-s*p.y,y:s*p.x+c*p.y,part:p.part}));
+    if(outer.length>1&&Math.hypot(outer[0].x-outer[outer.length-1].x,outer[0].y-outer[outer.length-1].y)<tol)outer.pop();
+    // Monotone polar outline is required: no undercut or radial reentry.
+    let sweep=0;
+    for(let i=0;i<outer.length;i++){const p=outer[i],q=outer[(i+1)%outer.length];let d=Math.atan2(q.y,q.x)-Math.atan2(p.y,p.x);while(d<0)d+=2*Math.PI;if(!(d>1e-12&&d<Math.PI))throw Error('Non-star-shaped or duplicate outline');sweep+=d;}
+    if(Math.abs(sweep-2*Math.PI)>1e-6)throw Error('Invalid polar outline winding');
+    const points=[],tri=[],n=outer.length,id=(k,j)=>k*n+(j%n);
+    for(let k=0;k<=radialLayers;k++)for(const p of outer){const R=Math.hypot(p.x,p.y);if(!(R>radius))throw Error('Bore intersects gear outline');const r=radius+(R-radius)*k/radialLayers;points.push([p.x*r/R,p.y*r/R]);}
+    for(let k=0;k<radialLayers;k++)for(let j=0;j<n;j++){const a=id(k,j),b=id(k+1,j),c=id(k+1,j+1),d=id(k,j+1);tri.push([a,b,c],[a,c,d]);}
+    const mesh=extrude(points,tri,section.g.b,widthLayers),count=points.length;
+    mesh.faces=boundary(mesh,(coords,f)=>{
+      const ids=f.nodes.slice(0,3).map(i=>i%count),rings=ids.map(i=>Math.floor(i/n));
+      if(rings.every(k=>k===0))return 'bore';
+      if(rings.every(k=>k===radialLayers)){
+        const mid=coords.slice(0,3).reduce((p,q)=>[p[0]+q[0]/3,p[1]+q[1]/3],[0,0]),theta=Math.atan2(mid[1],mid[0]),pitch=2*Math.PI/section.g.z,tooth=Math.round(theta/pitch),local=theta-tooth*pitch;
+        const parts=ids.map(i=>outer[i%n].part),part=parts.includes('fillet')?'fillet':parts.includes('involute')?'flank':parts[0];
+        return 'tooth:'+((tooth+section.g.z)%section.g.z)+':'+(local<0?'minus':'plus')+':'+part;
+      }
+      return 'end';
+    });
+    mesh.metadata={rotation:angle,geometry:'full-gear radial straight TET10',boreRadius:radius,radialLayers,widthLayers};return mesh;
+  }
+  const api={edges,determinant,elevate,extrude,box,boundary,gear};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.FEAMesh=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -51,7 +51,27 @@
     if(relativeResidual>tolerance)throw Error('PCG did not converge: '+relativeResidual);
     const reactions=multiply(A,x).map((v,i)=>v-force[i]);return {displacements:x,reactions,iterations,relativeResidual};
   }
-  function stress(mesh,u,E,nu){const D=material(E,nu);return mesh.elements.map(t=>{const {g}=geometry(mesh,t),B=strainMatrix(g,[.25,.25,.25,.25]),v=t.flatMap(i=>[u[3*i],u[3*i+1],u[3*i+2]]),eps=B.map(row=>dot(row,v)),s=D.map(row=>dot(row,eps));const [x,y,z,xy,yz,zx]=s;return {stress:s,vonMises:Math.sqrt(((x-y)**2+(y-z)**2+(z-x)**2)/2+3*(xy*xy+yz*yz+zx*zx))};});}
+  function invariants(s){
+    const [x,y,z,xy,yz,zx]=s,mean=(x+y+z)/3,p=Math.sqrt(((x-mean)**2+(y-mean)**2+(z-mean)**2+2*(xy*xy+yz*yz+zx*zx))/6);
+    let principal;
+    if(p<1e-14*Math.max(1,...s.map(Math.abs)))principal=[mean,mean,mean];
+    else {const a=(x-mean)/p,b=(y-mean)/p,c=(z-mean)/p,d=xy/p,e=yz/p,f=zx/p,r=Math.max(-1,Math.min(1,(a*b*c+2*d*e*f-a*e*e-b*f*f-c*d*d)/2)),theta=Math.acos(r)/3;
+      const high=mean+2*p*Math.cos(theta),low=mean+2*p*Math.cos(theta+2*Math.PI/3);principal=[high,3*mean-high-low,low];}
+    return {stress:s,principal,maxPrincipal:principal[0],vonMises:Math.sqrt(((x-y)**2+(y-z)**2+(z-x)**2)/2+3*(xy*xy+yz*yz+zx*zx))};
+  }
+  function elementStress(mesh,t,u,E,nu,L=[.25,.25,.25,.25]){
+    const {g}=geometry(mesh,t),B=strainMatrix(g,L),v=t.flatMap(i=>[u[3*i],u[3*i+1],u[3*i+2]]),eps=B.map(row=>dot(row,v));return invariants(material(E,nu).map(row=>dot(row,eps)));
+  }
+  function stress(mesh,u,E,nu){return mesh.elements.map(t=>elementStress(mesh,t,u,E,nu));}
+  function probe(mesh,u,E,nu,point){
+    const candidates=[];
+    mesh.elements.forEach((t,element)=>{const {g}=geometry(mesh,t),origin=mesh.nodes[t[0]],delta=point.map((x,i)=>x-origin[i]),L=[0,...g.slice(1).map(row=>dot(row,delta))];L[0]=1-L[1]-L[2]-L[3];
+      if(L.every(x=>x>=-1e-8&&x<=1+1e-8))candidates.push({element,...elementStress(mesh,t,u,E,nu,L)});
+    });
+    if(!candidates.length)throw Error('Stress probe outside mesh');
+    // Preserve element-side values. Caller chooses a consistent recovery convention.
+    return candidates;
+  }
   function traction(mesh,faces,vector){
     const f=new Float64Array(3*mesh.nodes.length);
     for(const face of faces){const p=face.nodes.slice(0,3).map(i=>mesh.nodes[i]),a=p[1].map((x,i)=>x-p[0][i]),b=p[2].map((x,i)=>x-p[0][i]);
@@ -60,5 +80,5 @@
       for(const i of face.nodes.slice(3))for(let d=0;d<3;d++)f[3*i+d]+=area*vector[d]/3;
     }return f;
   }
-  const api={material,geometry,strainMatrix,assemble,multiply,solve,stress,traction};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
+  const api={material,geometry,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

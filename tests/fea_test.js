@@ -21,9 +21,21 @@ function beam(nx,ny){
   assert(Math.abs(fy+100)<.005);assert(Math.abs(mz+10000)<.5);
   const s=F.stress(m,r.displacements,206000,.3);
   assert(s.every(v=>Number.isFinite(v.vonMises)));
+  if(nx===10){const probes=F.probe(m,r.displacements,206000,.3,[20,0,0]);const meanSxx=probes.reduce((sum,s)=>sum+s.stress[0],0)/probes.length;assert(Math.abs(meanSxx/48-1)<.05);}
   return mean;
 }
 const coarse=beam(5,1),fine=beam(10,2);
 assert(Math.abs(fine/.1941747572815534-1)<.03);
 assert(Math.abs(fine/.1941747572815534-1)<Math.abs(coarse/.1941747572815534-1));
 console.log('FEA A displacement refinement passed',coarse,fine);
+assert.deepStrictEqual(F.invariants([10,10,10,0,0,0]).principal,[10,10,10]);
+assert(Math.abs(F.invariants([0,0,0,100,0,0]).maxPrincipal-100)<1e-10);
+const G=require('../src/gear');
+const gear=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:3,involute:4},nTip:2}),{radialLayers:2,widthLayers:2});
+assert(gear.faces.some(f=>f.group==='tooth:0:minus:flank'));
+assert(gear.faces.some(f=>f.group==='tooth:0:plus:fillet'));
+assert(gear.faces.some(f=>f.group==='bore'));
+assert(gear.elements.every(t=>M.determinant(...t.slice(0,4).map(i=>gear.nodes[i]))>0));
+assert.throws(()=>M.gear({analyzable:false}),/not analyzable/);
+assert.throws(()=>M.gear(G.section({z:20},{bore:20,key:{w:4,t:2}})),/Keyways/);
+console.log('Gear radial topology and face ID checks passed');
