@@ -58,7 +58,7 @@
     }
     return out;
   }
-  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[],coarsenBore=false,mirrorAxial=false}={}){
+  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[],coarsenBore=false,mirrorAxial=false,resolveCurvature=false}={}){
     if(!section.analyzable)throw Error('Geometry not analyzable');
     if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
@@ -85,6 +85,26 @@
       outer=outer.map(p=>({...p,theta:Math.atan2(p.y,p.x)})).filter(p=>p.theta<min-1e-10||p.theta>max+1e-10);
       for(const theta of flankKnots){const r=boundaryRadius(theta);outer.push({x:r*Math.cos(theta),y:r*Math.sin(theta),part:'involute',theta});}
       outer.sort((a,b)=>a.theta-b.theta);
+    }
+    if(resolveCurvature&&boundaryRadius){
+      // Limit midside movement relative to the wall thickness of the nearest
+      // radial layer, especially around the steep fillet-to-flank transition.
+      const step=radialLayers**(-radialGrade);
+      function subdivide(a,b,depth){
+        const theta=Math.atan2(a.y+b.y,a.x+b.x);
+        const chord=Math.hypot(a.x+b.x,a.y+b.y)/2,r=boundaryRadius(theta);
+        if(!(r>radius))throw Error('Bore intersects gear outline');
+        if(Math.abs(r-chord)<.15*(r-radius)*step)return [a];
+        if(depth===10)throw Error('Surface crosses an unresolved profile transition');
+        const parts=[a.part,b.part];
+        const part=parts.includes('tip')?'tip':parts.includes('involute')?'involute':parts.includes('fillet')?'fillet':'root';
+        const mid={x:r*Math.cos(theta),y:r*Math.sin(theta),part};
+        return [...subdivide(a,mid,depth+1),...subdivide(mid,b,depth+1)];
+      }
+      const limit=sectorTeeth?outer.length-1:outer.length,refined=[];
+      for(let i=0;i<limit;i++)refined.push(...subdivide(outer[i],outer[(i+1)%outer.length],0));
+      if(sectorTeeth)refined.push(outer.at(-1));
+      outer=refined;
     }
     const points=[],tri=[],n=outer.length,rings=[],pointTags=[];
     for(let k=0;k<=radialLayers;k++){

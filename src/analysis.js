@@ -47,7 +47,7 @@
 
   function run(p,body,options={}){
     const {E=206000,nu=.3,sectorTeeth=5,radialLayers=2,widthLayers=6,radialGrade=2,coarsenBore=false,
-      counts={root:1,fillet:4,involute:6},backgroundCounts=null,cutFixed=false,preconditioner='jacobi',axialSymmetry=false,mirrorAxial=false,...loading}=options;
+      counts={root:1,fillet:4,involute:6},backgroundCounts=null,cutFixed=false,preconditioner='jacobi',axialSymmetry=false,mirrorAxial=false,resolveCurvature=false,...loading}=options;
     const g=G.basic(p);
     if(!Number.isInteger(g.z)||g.z<3||g.z>300||![g.m,g.b,g.ha,g.hf].every(v=>Number.isFinite(v)&&v>0)
       ||!(g.alpha>0&&g.alpha<90)||!Number.isFinite(g.x)||!(g.rho>0)||!(body.bore>0))
@@ -72,7 +72,7 @@
       throw Error('Axial symmetry requires uniform face load and an even full-width layer count');
     }
     const meshSection=axialSymmetry?{...section,g:{...g,b:g.b/2}}:section;
-    const mesh=M.gear(meshSection,{sectorTeeth,radialLayers,widthLayers:axialSymmetry?widthLayers/2:widthLayers,radialGrade,coarsenBore,mirrorAxial:!axialSymmetry&&mirrorAxial,flankKnots:L.patchKnots(p,loading),boundaryRadius:theta=>G.boundaryRadius(p,theta)});
+    const mesh=M.gear(meshSection,{sectorTeeth,radialLayers,widthLayers:axialSymmetry?widthLayers/2:widthLayers,radialGrade,coarsenBore,mirrorAxial:!axialSymmetry&&mirrorAxial,resolveCurvature,flankKnots:L.patchKnots(p,loading),boundaryRadius:theta=>G.boundaryRadius(p,theta)});
     if(axialSymmetry)for(const point of mesh.nodes)point[2]+=g.b/4;
     if(axialSymmetry)loading.torqueNm=(loading.torqueNm??40)/2;
     const load=L.patch(mesh,p,loading),fixedNodes=new Set(),boreNodes=new Set();

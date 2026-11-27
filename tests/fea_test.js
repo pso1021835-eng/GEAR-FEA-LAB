@@ -67,6 +67,14 @@ const fast=F.multiply(K,affine),unrolled=F.multiply({...K,triplets:false},affine
 assert(fast.every((x,i)=>Math.abs(x-unrolled[i])<1e-9));
 console.log('Sector boundaries and curved affine strain passed');
 const Load=require('../src/loading'),contact=Load.hpstc({z:20});
+const adaptiveGear=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:8,involute:12},nTip:3}),{
+  sectorTeeth:7,radialLayers:11,radialGrade:2,widthLayers:1,coarsenBore:true,resolveCurvature:true,
+  flankKnots:Load.patchKnots({z:20}),boundaryRadius:t=>G.boundaryRadius({z:20},t)
+});
+const jacobianSamples=[[.25,.25,.25,.25],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+for(const element of adaptiveGear.elements)if(F.isCurved(adaptiveGear,element)){
+  for(const sample of jacobianSamples)assert(F.mapping(adaptiveGear,element,sample).det>0);
+}
 assert(Math.abs(contact.R-20.304798860015772)<1e-10);
 assert(Math.abs(contact.s-.8456863940860675)<1e-10);
 assert(Math.abs(contact.ratio-1.6351859635714583)<1e-10);
