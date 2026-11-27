@@ -56,7 +56,7 @@
     }
     return out;
   }
-  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null}={}){
+  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null}={}){
     if(!section.analyzable)throw Error('Geometry not analyzable');
     if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
@@ -92,7 +92,15 @@
       }
       return 'end';
     });
-    mesh.metadata={rotation:angle,geometry:'radial straight TET10',boreRadius:radius,radialLayers,widthLayers,sectorTeeth};return mesh;
+    if(boundaryRadius){
+      const updated=new Set();
+      for(const f of mesh.faces)if(f.group==='bore'||f.group.startsWith('tooth:'))for(const i of f.nodes.slice(3)){
+        if(updated.has(i))continue;updated.add(i);
+        const p=mesh.nodes[i],theta=Math.atan2(p[1],p[0]),r=f.group==='bore'?radius:boundaryRadius(theta);
+        if(!(r>0)||!Number.isFinite(r))throw Error('Invalid boundary mapping');p[0]=r*Math.cos(theta);p[1]=r*Math.sin(theta);
+      }
+    }
+    mesh.metadata={rotation:angle,geometry:boundaryRadius?'curved TET10':'radial straight TET10',boreRadius:radius,radialLayers,widthLayers,sectorTeeth};return mesh;
   }
   const api={edges,determinant,elevate,extrude,box,boundary,gear};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.FEAMesh=api;

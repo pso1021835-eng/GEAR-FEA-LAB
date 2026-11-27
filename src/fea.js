@@ -91,10 +91,17 @@
   }
   function traction(mesh,faces,vector){
     const f=new Float64Array(3*mesh.nodes.length);
-    for(const face of faces){const p=face.nodes.slice(0,3).map(i=>mesh.nodes[i]),a=p[1].map((x,i)=>x-p[0][i]),b=p[2].map((x,i)=>x-p[0][i]);
-      const area=Math.hypot(a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0])/2;
-      // Constant traction on TRI6: vertex integrals vanish, each edge node gets A/3.
-      for(const i of face.nodes.slice(3))for(let d=0;d<3;d++)f[3*i+d]+=area*vector[d]/3;
+    for(const face of faces)for(let i=0;i<3;i++)for(let j=0;j<3;j++){
+      const r=gp[i],s=gp[j],L=[(1-r)*(1-s),r,(1-r)*s],N=L.map(x=>x*(2*x-1)),ng=[[-1,-1],[1,0],[0,1]],dN=L.map((x,k)=>ng[k].map(y=>(4*x-1)*y));
+      for(const [a,b]of [[0,1],[1,2],[2,0]]){N.push(4*L[a]*L[b]);dN.push(ng[a].map((x,k)=>4*(L[b]*x+L[a]*ng[b][k])));}
+      const xyz=[0,1,2].map(d=>N.reduce((v,n,k)=>v+n*mesh.nodes[face.nodes[k]][d],0));
+      const tangent=[0,1].map(k=>[0,1,2].map(d=>dN.reduce((v,n,a)=>v+n[k]*mesh.nodes[face.nodes[a]][d],0))),[a,b]=tangent;
+      const cross=[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],jac=Math.hypot(...cross);
+      if(!(jac>0))throw Error('Degenerate load face');
+      const q=typeof vector==='function'?vector(xyz,face,cross.map(x=>x/jac)):vector;
+      if(q.length!==3||q.some(x=>!Number.isFinite(x)))throw Error('Invalid traction');
+      const weight=gw[i]*gw[j]*(1-r)*jac;
+      for(let k=0;k<6;k++)for(let d=0;d<3;d++)f[3*face.nodes[k]+d]+=N[k]*q[d]*weight;
     }return f;
   }
   const api={material,geometry,mapping,isCurved,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;

@@ -56,3 +56,11 @@ for(const L of [[.25,.25,.25,.25],[.7,.1,.1,.1]]){
 const K=F.assemble(curved,206000,.3),rigid=new Float64Array(30);for(let i=0;i<10;i++)rigid[3*i]=1;
 assert(Math.max(...F.multiply(K,rigid).map(Math.abs))<1e-8);
 console.log('Sector boundaries and curved affine strain passed');
+const Load=require('../src/loading'),contact=Load.hpstc({z:20});
+assert(Math.abs(contact.R-20.304798860015772)<1e-10);
+assert(Math.abs(contact.s-.8456863940860675)<1e-10);
+assert(Math.abs(contact.ratio-1.6351859635714583)<1e-10);
+const curvedGear=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:4,involute:40},nTip:2}),{sectorTeeth:5,radialLayers:1,widthLayers:2,boundaryRadius:t=>G.boundaryRadius({z:20},t)});
+const load=Load.patch(curvedGear,{z:20});assert(Math.abs(load.resultant.moment[2]+40000)<1e-8);assert(load.forceError<.005);
+for(const p of G.outline({z:20}).points){const theta=Math.atan2(p.y,p.x)-Math.PI/2-Math.PI/20;assert(Math.abs(Math.hypot(p.x,p.y)-G.boundaryRadius({z:20},theta))<1e-8);}
+console.log('Exact rack boundary and C HPSTC finite patch balance passed');

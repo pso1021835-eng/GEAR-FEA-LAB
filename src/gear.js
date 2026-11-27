@@ -197,6 +197,24 @@
       analyzable: !blocking };   // false면 F2 FEA에 넘기지 않음 (언더컷 경계는 포락선 교점 재구성 전까지 해석 대상 아님)
   }
 
-  const api = { basic, halfSpace, resampleHalf, outline, info, involuteHalfAngle, boreHole, section };
+  // Exact rack-envelope boundary radius at an angle measured from a tooth centre.
+  function boundaryRadius(p,theta){
+    const g=basic(p),pitch=2*Math.PI/g.z;
+    let q=theta+pitch/2;q=((q+pitch/2)%pitch+pitch)%pitch-pitch/2;
+    const delta=Math.abs(q),rack=rackRight(g,1,1),corner=rack.find(v=>v.part==='fillet');
+    const rho=g.rho*g.m,yc=g.rf+rho,cx=corner.p[0]-rho*Math.cos(-g.alphaRad);
+    const arc=t=>envelope(g,{p:[cx+rho*Math.cos(t),yc+rho*Math.sin(t)],n:[Math.cos(t),Math.sin(t)]});
+    const angle=v=>Math.abs(Math.atan2(v[0],v[1])),start=arc(-Math.PI/2),end=arc(-g.alphaRad);
+    if(delta<=angle(start))return g.rf;
+    if(delta<angle(end)){
+      let lo=-Math.PI/2,hi=-g.alphaRad;
+      for(let i=0;i<50;i++){const mid=(lo+hi)/2;if(angle(arc(mid))<delta)lo=mid;else hi=mid;}
+      return Math.hypot(...arc((lo+hi)/2));
+    }
+    const tip=pitch/2-involuteHalfAngle(g,g.ra);if(delta>=tip)return g.ra;
+    let lo=Math.max(g.rb,Math.hypot(...end)),hi=g.ra;
+    for(let i=0;i<50;i++){const mid=(lo+hi)/2;if(pitch/2-involuteHalfAngle(g,mid)<delta)lo=mid;else hi=mid;}return (lo+hi)/2;
+  }
+  const api = { basic, halfSpace, resampleHalf, outline, info, involuteHalfAngle, boreHole, section, boundaryRadius };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GearGeom = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
