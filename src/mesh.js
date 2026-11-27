@@ -56,7 +56,7 @@
     }
     return out;
   }
-  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[]}={}){
+  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[],coarsenBore=false}={}){
     if(!section.analyzable)throw Error('Geometry not analyzable');
     if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
@@ -84,18 +84,44 @@
       for(const theta of flankKnots){const r=boundaryRadius(theta);outer.push({x:r*Math.cos(theta),y:r*Math.sin(theta),part:'involute',theta});}
       outer.sort((a,b)=>a.theta-b.theta);
     }
-    const points=[],tri=[],n=outer.length,id=(k,j)=>k*n+(j%n);
-    for(let k=0;k<=radialLayers;k++)for(const p of outer){const R=Math.hypot(p.x,p.y);if(!(R>radius))throw Error('Bore intersects gear outline');const r=R-(R-radius)*(1-k/radialLayers)**radialGrade;points.push([p.x*r/R,p.y*r/R]);}
-    for(let k=0;k<radialLayers;k++)for(let j=0;j<(sectorTeeth?n-1:n);j++){const a=id(k,j),b=id(k+1,j),c=id(k+1,j+1),d=id(k,j+1);tri.push([a,b,c],[a,c,d]);}
+    const points=[],tri=[],n=outer.length,rings=[],pointTags=[];
+    for(let k=0;k<=radialLayers;k++){
+      const ring=new Map();
+      const stride=coarsenBore?2**Math.min(2,Math.max(0,radialLayers-k-1)):1;
+      for(let j=0;j<n;j++){
+        if(j%stride!==0&&!(sectorTeeth&&j===n-1))continue;
+        const p=outer[j],R=Math.hypot(p.x,p.y);
+        if(!(R>radius))throw Error('Bore intersects gear outline');
+        const r=R-(R-radius)*(1-k/radialLayers)**radialGrade;
+        ring.set(j,points.length);points.push([p.x*r/R,p.y*r/R]);pointTags.push({ring:k,column:j});
+      }
+      rings.push(ring);
+    }
+    for(let k=0;k<radialLayers;k++){
+      const inner=rings[k],outerRing=rings[k+1],keys=[...inner.keys()];
+      if(!sectorTeeth)keys.push(n);
+      for(let i=0;i<keys.length-1;i++){
+        const first=keys[i],last=keys[i+1],a=inner.get(first),d=inner.get(last%n);
+        const columns=[];
+        for(let j=first;j<=last;j++)if(outerRing.has(j%n))columns.push(outerRing.get(j%n));
+        for(let j=0;j<columns.length-1;j++)tri.push([a,columns[j],columns[j+1]]);
+        tri.push([a,columns.at(-1),d]);
+      }
+    }
+    for(const [i,j,k] of tri){
+      const [a,b,c]=[points[i],points[j],points[k]];
+      const twiceArea=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+      if(!(twiceArea>0))throw Error('Radial triangulation overlaps or degenerates');
+    }
     const mesh=extrude(points,tri,section.g.b,widthLayers),count=points.length;
     mesh.faces=boundary(mesh,(coords,f)=>{
-      const ids=f.nodes.slice(0,3).map(i=>i%count),rings=ids.map(i=>Math.floor(i/n));
-      if(rings.every(k=>k===0))return 'bore';
-      if(sectorTeeth&&ids.every(i=>i%n===0))return 'cut:minus';
-      if(sectorTeeth&&ids.every(i=>i%n===n-1))return 'cut:plus';
-      if(rings.every(k=>k===radialLayers)){
+      const tags=f.nodes.slice(0,3).map(i=>pointTags[i%count]);
+      if(tags.every(p=>p.ring===0))return 'bore';
+      if(sectorTeeth&&tags.every(p=>p.column===0))return 'cut:minus';
+      if(sectorTeeth&&tags.every(p=>p.column===n-1))return 'cut:plus';
+      if(tags.every(p=>p.ring===radialLayers)){
         const mid=coords.slice(0,3).reduce((p,q)=>[p[0]+q[0]/3,p[1]+q[1]/3],[0,0]),theta=Math.atan2(mid[1],mid[0]),pitch=2*Math.PI/section.g.z,tooth=Math.round(theta/pitch),local=theta-tooth*pitch;
-        const parts=ids.map(i=>outer[i%n].part);
+        const parts=tags.map(p=>outer[p.column].part);
         const part=parts.includes('tip')?'tip':parts.includes('involute')?'flank':parts.includes('fillet')?'fillet':'root';
         return 'tooth:'+((tooth+section.g.z)%section.g.z)+':'+(local<0?'minus':'plus')+':'+part;
       }

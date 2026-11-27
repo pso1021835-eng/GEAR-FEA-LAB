@@ -8,7 +8,7 @@
   const L=node?require('./loading'):root.FEALoading;
 
   function run(p,body,options={}){
-    const {E=206000,nu=.3,sectorTeeth=5,radialLayers=2,widthLayers=6,radialGrade=2,
+    const {E=206000,nu=.3,sectorTeeth=5,radialLayers=2,widthLayers=6,radialGrade=2,coarsenBore=false,
       counts={root:1,fillet:4,involute:6},cutFixed=false,...loading}=options;
     const g=G.basic(p);
     if(!Number.isInteger(g.z)||g.z<3||g.z>300||![g.m,g.b,g.ha,g.hf].every(v=>Number.isFinite(v)&&v>0)
@@ -16,7 +16,7 @@
       throw Error('잘못된 기어 또는 보어 치수입니다.');
     const section=G.section(p,body,{counts,nTip:3});
     if(!section.analyzable)throw Error('Geometry not analyzable');
-    const mesh=M.gear(section,{sectorTeeth,radialLayers,widthLayers,radialGrade,flankKnots:L.patchKnots(p,loading),boundaryRadius:theta=>G.boundaryRadius(p,theta)});
+    const mesh=M.gear(section,{sectorTeeth,radialLayers,widthLayers,radialGrade,coarsenBore,flankKnots:L.patchKnots(p,loading),boundaryRadius:theta=>G.boundaryRadius(p,theta)});
     const load=L.patch(mesh,p,loading),fixedNodes=new Set(),boreNodes=new Set();
     for(const face of mesh.faces){
       if(face.group==='bore')for(const i of face.nodes)boreNodes.add(i);

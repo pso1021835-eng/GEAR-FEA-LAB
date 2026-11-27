@@ -44,6 +44,10 @@ for(const sectorTeeth of [5,7]){
   for(const sign of ['minus','plus'])assert(sector.faces.some(f=>f.group==='cut:'+sign));
   assert(sector.elements.length<gear.elements.length);
 }
+const compact=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:3,involute:4},nTip:2}),{sectorTeeth:5,radialLayers:3,widthLayers:2,coarsenBore:true});
+const regular=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:3,involute:4},nTip:2}),{sectorTeeth:5,radialLayers:3,widthLayers:2});
+assert(compact.nodes.length<regular.nodes.length);
+assert(compact.faces.some(f=>f.group==='bore')&&compact.faces.some(f=>f.group==='cut:plus'));
 // Curved element must reproduce an affine physical displacement exactly.
 const curved=M.elevate([[0,0,0],[2,0,0],[0,2,0],[0,0,2]],[[0,1,2,3]]);
 curved.nodes[4][1]=-.1;
