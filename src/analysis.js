@@ -17,16 +17,21 @@
     const section=G.section(p,body,{counts,nTip:3});
     if(!section.analyzable)throw Error('Geometry not analyzable');
     const mesh=M.gear(section,{sectorTeeth,radialLayers,widthLayers,radialGrade,flankKnots:L.patchKnots(p,loading),boundaryRadius:theta=>G.boundaryRadius(p,theta)});
-    const load=L.patch(mesh,p,loading),fixedNodes=new Set();
+    const load=L.patch(mesh,p,loading),fixedNodes=new Set(),boreNodes=new Set();
     for(const face of mesh.faces){
+      if(face.group==='bore')for(const i of face.nodes)boreNodes.add(i);
       if(face.group==='bore'||(cutFixed&&face.group.startsWith('cut:')))for(const i of face.nodes)fixedNodes.add(i);
     }
-    if(!fixedNodes.size)throw Error('No bore restraint');
+    if(!boreNodes.size)throw Error('No bore restraint');
     const fixed=[...fixedNodes].flatMap(i=>[3*i,3*i+1,3*i+2]);
     const solution=F.solve(F.assemble(mesh,E,nu),load.force,fixed);
     const reactionVector=new Float64Array(load.force.length);
     for(const i of fixed)reactionVector[i]=solution.reactions[i];
     const reaction=L.resultant(mesh,reactionVector);
+    let cutTorque=0;
+    for(const i of fixedNodes)if(!boreNodes.has(i)){
+      const [x,y]=mesh.nodes[i];cutTorque+=x*reactionVector[3*i+1]-y*reactionVector[3*i];
+    }
     const error=(a,b,scale)=>Math.hypot(...a.map((x,i)=>x+b[i]))/scale;
     const forceError=error(reaction.force,load.resultant.force,load.expectedFn);
     const momentError=error(reaction.moment,load.resultant.moment,Math.abs(load.resultant.moment[2]));
@@ -46,9 +51,17 @@
     if(!root.central)throw Error('No central fillet samples');
     let work=0;for(let i=0;i<load.force.length;i++)work+=load.force[i]*solution.displacements[i];
     const maximumVonMises=F.stress(mesh,solution.displacements,E,nu).reduce((max,s)=>Math.max(max,s.vonMises),0);
-    return {root,maximumVonMises,load,reaction,forceError,momentError,
+    return {root,maximumVonMises,load,reaction,forceError,momentError,cutTorque,
       loadDisplacement:work/Math.hypot(...load.resultant.force),dofs:load.force.length,
       iterations:solution.iterations,residual:solution.relativeResidual};
   }
-  const api={run};if(node)module.exports=api;else root.FEAAnalysis=api;
+  function compare(coarse,fine,{stressTolerance=.03,displacementTolerance=.02}={}){
+    const relative=(a,b)=>b===0?Infinity:Math.abs(a-b)/Math.abs(b);
+    const stressChange=relative(coarse.root.central.maxPrincipal,fine.root.central.maxPrincipal);
+    const displacementChange=relative(coarse.loadDisplacement,fine.loadDisplacement);
+    const sameFillet=coarse.root.central.side===fine.root.central.side;
+    return {stressChange,displacementChange,sameFillet,
+      passes:stressChange<stressTolerance&&displacementChange<displacementTolerance&&sameFillet};
+  }
+  const api={run,compare};if(node)module.exports=api;else root.FEAAnalysis=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
