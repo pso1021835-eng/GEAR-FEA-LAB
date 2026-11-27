@@ -39,3 +39,20 @@ assert(gear.elements.every(t=>M.determinant(...t.slice(0,4).map(i=>gear.nodes[i]
 assert.throws(()=>M.gear({analyzable:false}),/not analyzable/);
 assert.throws(()=>M.gear(G.section({z:20},{bore:20,key:{w:4,t:2}})),/Keyways/);
 console.log('Gear radial topology and face ID checks passed');
+for(const sectorTeeth of [5,7]){
+  const sector=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:3,involute:4},nTip:2}),{sectorTeeth,radialLayers:2,widthLayers:2});
+  for(const sign of ['minus','plus'])assert(sector.faces.some(f=>f.group==='cut:'+sign));
+  assert(sector.elements.length<gear.elements.length);
+}
+// Curved element must reproduce an affine physical displacement exactly.
+const curved=M.elevate([[0,0,0],[2,0,0],[0,2,0],[0,0,2]],[[0,1,2,3]]);
+curved.nodes[4][1]=-.1;
+const affine=Float64Array.from(curved.nodes.flatMap(([x,y,z])=>[.001*x,-.0003*y,-.0003*z]));
+assert(F.isCurved(curved,curved.elements[0]));
+for(const L of [[.25,.25,.25,.25],[.7,.1,.1,.1]]){
+  const s=F.elementStress(curved,curved.elements[0],affine,206000,.3,L);
+  assert(Math.abs(s.stress[0]-206)<1e-9);assert(s.stress.slice(1).every(x=>Math.abs(x)<1e-9));
+}
+const K=F.assemble(curved,206000,.3),rigid=new Float64Array(30);for(let i=0;i<10;i++)rigid[3*i]=1;
+assert(Math.max(...F.multiply(K,rigid).map(Math.abs))<1e-8);
+console.log('Sector boundaries and curved affine strain passed');

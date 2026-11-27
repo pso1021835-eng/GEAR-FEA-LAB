@@ -4,6 +4,21 @@
   const edge=[[0,1],[1,2],[2,0],[0,3],[1,3],[2,3]];
   const a=.5854101966249685,b=.1381966011250105;
   const quadrature=[[a,b,b,b],[b,a,b,b],[b,b,a,b],[b,b,b,a]];
+  const curvedQuadrature=[];
+  const gp=[(1-Math.sqrt(3/5))/2,.5,(1+Math.sqrt(3/5))/2],gw=[5/18,4/9,5/18];
+  for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++){
+    const r=gp[i],s=gp[j],t=gp[k],L=[(1-r)*(1-s)*(1-t),r,(1-r)*s,(1-r)*(1-s)*t];
+    curvedQuadrature.push({L,weight:gw[i]*gw[j]*gw[k]*(1-r)**2*(1-s)});
+  }
+  function mapping(mesh,t,L){
+    const natural=[[-1,-1,-1],[1,0,0],[0,1,0],[0,0,1]],grad=L.map((x,i)=>natural[i].map(y=>(4*x-1)*y));
+    edge.forEach(([i,j])=>grad.push(natural[i].map((x,d)=>4*(L[j]*x+L[i]*natural[j][d]))));
+    const J=Array.from({length:3},(_,d)=>[0,1,2].map(k=>grad.reduce((s,g,i)=>s+mesh.nodes[t[i]][d]*g[k],0)));
+    const u=J.map(r=>r[0]),v=J.map(r=>r[1]),w=J.map(r=>r[2]),cross=(x,y)=>[x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]],det=dot(u,cross(v,w));
+    if(!(det>0)||!Number.isFinite(det))throw Error('Nonpositive curved Jacobian');
+    const g=[cross(v,w),cross(w,u),cross(u,v)].map(x=>x.map(y=>y/det));g.unshift([0,1,2].map(i=>-g[0][i]-g[1][i]-g[2][i]));return {g,det};
+  }
+  function isCurved(mesh,t){return edge.some(([i,j],k)=>mesh.nodes[t[k+4]].some((x,d)=>Math.abs(x-(mesh.nodes[t[i]][d]+mesh.nodes[t[j]][d])/2)>1e-9));}
   function material(E,nu){
     if(!(E>0)||!Number.isFinite(E)||!(nu> -1&&nu<.5))throw Error('Invalid elastic material');
     const mu=E/(2*(1+nu)),lambda=E*nu/((1+nu)*(1-2*nu));
@@ -27,9 +42,11 @@
   }
   function assemble(mesh,E,nu){
     const D=material(E,nu),rows=Array.from({length:mesh.nodes.length*3},()=>new Map());
-    for(const t of mesh.elements){const {g,det}=geometry(mesh,t),K=new Float64Array(900);
-      for(const L of quadrature){const B=strainMatrix(g,L),DB=D.map(row=>Float64Array.from({length:30},(_,j)=>row.reduce((s,x,i)=>s+x*B[i][j],0)));
-        for(let i=0;i<30;i++)for(let j=0;j<30;j++){let s=0;for(let k=0;k<6;k++)s+=B[k][i]*DB[k][j];K[i*30+j]+=s*det/24;}}
+    for(const t of mesh.elements){const curved=isCurved(mesh,t),base=curved?null:geometry(mesh,t),K=new Float64Array(900);
+      const rule=curved?curvedQuadrature:quadrature.map(L=>({L,weight:1/24}));
+      if(curved)for(const L of [[.25,.25,.25,.25],[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])mapping(mesh,t,L);
+      for(const {L,weight} of rule){const {g,det}=base||mapping(mesh,t,L),B=strainMatrix(g,L),DB=D.map(row=>Float64Array.from({length:30},(_,j)=>row.reduce((s,x,i)=>s+x*B[i][j],0)));
+        for(let i=0;i<30;i++)for(let j=0;j<30;j++){let s=0;for(let k=0;k<6;k++)s+=B[k][i]*DB[k][j];K[i*30+j]+=s*det*weight;}}
       const ids=t.flatMap(i=>[3*i,3*i+1,3*i+2]);
       for(let i=0;i<30;i++)for(let j=0;j<30;j++){const row=rows[ids[i]],id=ids[j];row.set(id,(row.get(id)||0)+K[i*30+j]);}
     }
@@ -60,7 +77,7 @@
     return {stress:s,principal,maxPrincipal:principal[0],vonMises:Math.sqrt(((x-y)**2+(y-z)**2+(z-x)**2)/2+3*(xy*xy+yz*yz+zx*zx))};
   }
   function elementStress(mesh,t,u,E,nu,L=[.25,.25,.25,.25]){
-    const {g}=geometry(mesh,t),B=strainMatrix(g,L),v=t.flatMap(i=>[u[3*i],u[3*i+1],u[3*i+2]]),eps=B.map(row=>dot(row,v));return invariants(material(E,nu).map(row=>dot(row,eps)));
+    const {g}=isCurved(mesh,t)?mapping(mesh,t,L):geometry(mesh,t),B=strainMatrix(g,L),v=t.flatMap(i=>[u[3*i],u[3*i+1],u[3*i+2]]),eps=B.map(row=>dot(row,v));return invariants(material(E,nu).map(row=>dot(row,eps)));
   }
   function stress(mesh,u,E,nu){return mesh.elements.map(t=>elementStress(mesh,t,u,E,nu));}
   function probe(mesh,u,E,nu,point){
@@ -80,5 +97,5 @@
       for(const i of face.nodes.slice(3))for(let d=0;d<3;d++)f[3*i+d]+=area*vector[d]/3;
     }return f;
   }
-  const api={material,geometry,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
+  const api={material,geometry,mapping,isCurved,strainMatrix,assemble,multiply,solve,stress,traction,invariants,elementStress,probe};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEASolver=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
