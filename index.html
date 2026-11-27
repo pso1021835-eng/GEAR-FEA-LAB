@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>기어 강도 시뮬레이터</title>
+  <style>
+    :root { --border:#2d3440; --panel:#141922; --bg:#090c12; --text:#e7edf5; --muted:#9aa6b5; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,"Malgun Gothic",sans-serif; }
+    header { height:56px; display:flex; align-items:center; padding:0 16px; border-bottom:1px solid var(--border); font-weight:700; }
+    main { display:grid; grid-template-columns:280px minmax(320px,1fr) 280px; min-height:calc(100vh - 56px); }
+    aside, section { border-right:1px solid var(--border); background:var(--panel); }
+    aside:last-child { border-right:0; }
+    section { position:relative; background:#0d1118; }
+    .panel { padding:16px; }
+    h2 { margin:0 0 12px; font-size:14px; }
+    .placeholder { color:var(--muted); font-size:13px; }
+    #view { position:absolute; inset:0; }
+    @media (max-width:900px) { main { grid-template-columns:220px minmax(260px,1fr) 220px; } }
+  </style>
+</head>
+<body>
+  <header>기어 강도 시뮬레이터</header>
+  <main>
+    <aside class="panel">
+      <h2>입력</h2>
+      <p class="placeholder">기어 입력 조건 자리</p>
+    </aside>
+    <section aria-label="3D 화면">
+      <div id="view"></div>
+    </section>
+    <aside class="panel">
+      <h2>결과</h2>
+      <p class="placeholder">응력·변형·안전율 결과 자리</p>
+    </aside>
+  </main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="src/scaffold.js"></script>
+</body>
+</html>
