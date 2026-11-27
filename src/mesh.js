@@ -56,10 +56,11 @@
     }
     return out;
   }
-  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null}={}){
+  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[]}={}){
     if(!section.analyzable)throw Error('Geometry not analyzable');
     if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
+    if(!Number.isFinite(radialGrade)||radialGrade<1)throw Error('Invalid radial grade');
     const hole=section.holes[0],radius=Math.hypot(hole[0].x,hole[0].y),tol=section.g.m*1e-8;
     if(!(radius>0)||hole.some(p=>Math.abs(Math.hypot(p.x,p.y)-radius)>tol))throw Error('Keyways and noncircular bores need constrained triangulation');
     const angle=-(Math.PI/2+Math.PI/section.g.z),c=Math.cos(angle),s=Math.sin(angle);
@@ -76,8 +77,15 @@
       const cut=theta=>({x:section.g.rf*Math.cos(theta),y:section.g.rf*Math.sin(theta),part:'root',theta});
       outer=[cut(-limit),...sorted.filter(p=>p.theta> -limit+1e-10&&p.theta<limit-1e-10),cut(limit)];
     }
+    if(flankKnots.length){
+      if(!boundaryRadius)throw Error('Flank knots require exact boundary radius');
+      const min=flankKnots[0],max=flankKnots.at(-1);
+      outer=outer.map(p=>({...p,theta:Math.atan2(p.y,p.x)})).filter(p=>p.theta<min-1e-10||p.theta>max+1e-10);
+      for(const theta of flankKnots){const r=boundaryRadius(theta);outer.push({x:r*Math.cos(theta),y:r*Math.sin(theta),part:'involute',theta});}
+      outer.sort((a,b)=>a.theta-b.theta);
+    }
     const points=[],tri=[],n=outer.length,id=(k,j)=>k*n+(j%n);
-    for(let k=0;k<=radialLayers;k++)for(const p of outer){const R=Math.hypot(p.x,p.y);if(!(R>radius))throw Error('Bore intersects gear outline');const r=radius+(R-radius)*k/radialLayers;points.push([p.x*r/R,p.y*r/R]);}
+    for(let k=0;k<=radialLayers;k++)for(const p of outer){const R=Math.hypot(p.x,p.y);if(!(R>radius))throw Error('Bore intersects gear outline');const r=R-(R-radius)*(1-k/radialLayers)**radialGrade;points.push([p.x*r/R,p.y*r/R]);}
     for(let k=0;k<radialLayers;k++)for(let j=0;j<(sectorTeeth?n-1:n);j++){const a=id(k,j),b=id(k+1,j),c=id(k+1,j+1),d=id(k,j+1);tri.push([a,b,c],[a,c,d]);}
     const mesh=extrude(points,tri,section.g.b,widthLayers),count=points.length;
     mesh.faces=boundary(mesh,(coords,f)=>{
@@ -87,7 +95,8 @@
       if(sectorTeeth&&ids.every(i=>i%n===n-1))return 'cut:plus';
       if(rings.every(k=>k===radialLayers)){
         const mid=coords.slice(0,3).reduce((p,q)=>[p[0]+q[0]/3,p[1]+q[1]/3],[0,0]),theta=Math.atan2(mid[1],mid[0]),pitch=2*Math.PI/section.g.z,tooth=Math.round(theta/pitch),local=theta-tooth*pitch;
-        const parts=ids.map(i=>outer[i%n].part),part=parts.includes('fillet')?'fillet':parts.includes('involute')?'flank':parts[0];
+        const parts=ids.map(i=>outer[i%n].part);
+        const part=parts.includes('tip')?'tip':parts.includes('involute')?'flank':parts.includes('fillet')?'fillet':'root';
         return 'tooth:'+((tooth+section.g.z)%section.g.z)+':'+(local<0?'minus':'plus')+':'+part;
       }
       return 'end';
@@ -100,7 +109,7 @@
         if(!(r>0)||!Number.isFinite(r))throw Error('Invalid boundary mapping');p[0]=r*Math.cos(theta);p[1]=r*Math.sin(theta);
       }
     }
-    mesh.metadata={rotation:angle,geometry:boundaryRadius?'curved TET10':'radial straight TET10',boreRadius:radius,radialLayers,widthLayers,sectorTeeth};return mesh;
+    mesh.metadata={rotation:angle,geometry:boundaryRadius?'curved TET10':'radial straight TET10',boreRadius:radius,radialLayers,radialGrade,widthLayers,sectorTeeth};return mesh;
   }
   const api={edges,determinant,elevate,extrude,box,boundary,gear};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.FEAMesh=api;

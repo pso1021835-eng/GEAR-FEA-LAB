@@ -5,13 +5,25 @@
   const F=typeof module!=='undefined'&&module.exports?require('./fea'):root.FEASolver;
   function hpstc(p,{mateTeeth=40,mateShift=0,centerDistance=null}={}){
     const g=G.basic(p),mate=G.basic({...p,z:mateTeeth,x:mateShift}),aw=centerDistance===null?g.r+mate.r:centerDistance;
-    if(!(aw>g.rb+mate.rb))throw Error('Invalid operating centre distance');
+    if(!Number.isInteger(mateTeeth)||mateTeeth<3||!(aw>g.rb+mate.rb))throw Error('Invalid mating gear or operating centre distance');
     const alphaW=Math.acos((g.rb+mate.rb)/aw),rw=g.rb/Math.cos(alphaW),rw2=mate.rb/Math.cos(alphaW),pb=Math.PI*g.m*Math.cos(g.alphaRad);
     const sA=rw2*Math.sin(alphaW)-Math.sqrt(mate.ra**2-mate.rb**2),sE=Math.sqrt(g.ra**2-g.rb**2)-rw*Math.sin(alphaW),ratio=(sE-sA)/pb;
     if(!(ratio>1&&ratio<2))throw Error('HPSTC requires 1 < contact ratio < 2');
     const s=sA+pb,R=Math.hypot(g.rb,rw*Math.sin(alphaW)+s),theta=G.involuteHalfAngle(p,R),alphaR=Math.acos(g.rb/R);
     const point=[R*Math.cos(theta),R*Math.sin(theta),0],direction=[-Math.sin(alphaR-theta),-Math.cos(alphaR-theta),0];
     return {R,theta,point,direction,s,ratio,alphaW,rw,rb:g.rb};
+  }
+  function patchKnots(p,options={}){
+    const g=G.basic(p),c=hpstc(p,options),width=options.patchWidth??.1*g.m;
+    if(!(width>0)||!Number.isFinite(width))throw Error('Invalid patch width');
+    const transition=G.halfSpace(p).pts.filter(q=>q.part==='fillet').at(-1);
+    if(!transition)throw Error('Missing generated fillet');
+    const limit=Math.hypot(transition.x,transition.y);
+    return Array.from({length:4},(_,i)=>{
+      const R=Math.sqrt(c.R**2+2*g.rb*width*(i/3-.5));
+      if(!(R>limit&&R<g.ra))throw Error('HPSTC patch extends beyond active flank');
+      return G.involuteHalfAngle(p,R);
+    }).sort((a,b)=>a-b);
   }
   function resultant(mesh,force){const total=[0,0,0],moment=[0,0,0];mesh.nodes.forEach(([x,y,z],i)=>{const [fx,fy,fz]=force.slice(3*i,3*i+3);total[0]+=fx;total[1]+=fy;total[2]+=fz;moment[0]+=y*fz-z*fy;moment[1]+=z*fx-x*fz;moment[2]+=x*fy-y*fx;});return {force:total,moment};}
   function patch(mesh,p,{torqueNm=40,patchWidth=.1*G.basic(p).m,KHbeta=1,...pair}={}){
@@ -31,5 +43,5 @@
     if(forceError>.005)throw Error('Patch force/moment mismatch: refine or reduce patch width');
     return {force,contact,resultant:balance,expectedFn,forceError,patchWidth,KHbeta};
   }
-  const api={hpstc,resultant,patch};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEALoading=api;
+  const api={hpstc,resultant,patch,patchKnots};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.FEALoading=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

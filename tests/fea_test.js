@@ -64,3 +64,11 @@ const curvedGear=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:4,invo
 const load=Load.patch(curvedGear,{z:20});assert(Math.abs(load.resultant.moment[2]+40000)<1e-8);assert(load.forceError<.005);
 for(const p of G.outline({z:20}).points){const theta=Math.atan2(p.y,p.x)-Math.PI/2-Math.PI/20;assert(Math.abs(Math.hypot(p.x,p.y)-G.boundaryRadius({z:20},theta))<1e-8);}
 console.log('Exact rack boundary and C HPSTC finite patch balance passed');
+// C: physical equilibrium and finite root response. The hand comparison is diagnostic.
+const A=require('../src/analysis');
+const c=A.run({z:20},{bore:20},{widthLayers:2,counts:{root:1,fillet:4,involute:8}});
+assert(c.residual<1e-8&&c.forceError<.005&&c.momentError<.005);
+assert(c.root.central.maxPrincipal>0&&c.root.full.maxPrincipal>=c.root.central.maxPrincipal);
+assert(c.loadDisplacement>0&&Number.isFinite(c.loadDisplacement));
+const comparison=c.root.central.maxPrincipal/144.67427765268215-1;
+console.log('C equilibrium passed, root MPa and hand-reference deviation:',c.root.central.maxPrincipal,comparison);
