@@ -41,6 +41,21 @@
     for(let i=0;i<nx;i++) for(let j=0;j<ny;j++) {const a=id(i,j),b=id(i+1,j),c=id(i+1,j+1),d=id(i,j+1);tri.push([a,b,c],[a,c,d]);}
     return extrude(p,tri,width,nz);
   }
-  const api={edges,determinant,elevate,extrude,box};
+  function boundary(mesh, classify=()=> 'surface') {
+    const faces=new Map(), local=[[0,2,1],[0,1,3],[1,2,3],[2,0,3]];
+    mesh.elements.forEach((t,element)=>local.forEach(c=>{
+      const v=c.map(i=>t[i]),key=v.slice().sort((a,b)=>a-b).join(':');
+      if(faces.has(key)) { faces.get(key).count++; return; }
+      const mids=c.map((a,i)=>{const b=c[(i+1)%3];return t[4+edges.findIndex(e=>e.includes(a)&&e.includes(b))];});
+      faces.set(key,{nodes:v.concat(mids),element,count:1});
+    }));
+    const out=[];
+    for(const f of faces.values()) {
+      if(f.count>2) throw Error('Non-manifold tetrahedron face');
+      if(f.count===1) { f.group=classify(f.nodes.map(i=>mesh.nodes[i]),f);out.push(f); }
+    }
+    return out;
+  }
+  const api={edges,determinant,elevate,extrude,box,boundary};
   if(typeof module!=='undefined'&&module.exports) module.exports=api; else root.FEAMesh=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
