@@ -63,6 +63,8 @@ for(const L of [[.25,.25,.25,.25],[.7,.1,.1,.1]]){
 }
 const K=F.assemble(curved,206000,.3),rigid=new Float64Array(30);for(let i=0;i<10;i++)rigid[3*i]=1;
 assert(Math.max(...F.multiply(K,rigid).map(Math.abs))<1e-8);
+const fast=F.multiply(K,affine),unrolled=F.multiply({...K,triplets:false},affine);
+assert(fast.every((x,i)=>Math.abs(x-unrolled[i])<1e-9));
 console.log('Sector boundaries and curved affine strain passed');
 const Load=require('../src/loading'),contact=Load.hpstc({z:20});
 assert(Math.abs(contact.R-20.304798860015772)<1e-10);

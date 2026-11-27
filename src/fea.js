@@ -66,10 +66,27 @@
     }
     const ptr=new Uint32Array(rows.length+1),cols=[],values=[];
     rows.forEach((r,i)=>{for(const [j,v]of r){cols.push(j);values.push(v);}ptr[i+1]=cols.length;});
-    return {ptr,cols:Uint32Array.from(cols),values:Float64Array.from(values),size:rows.length};
+    // All three components of a node were inserted together for whenever that
+    // node appeared in an element. Their CSR rows share the column ordering.
+    return {ptr,cols:Uint32Array.from(cols),values:Float64Array.from(values),size:rows.length,triplets:true};
   }
   function multiply(A,x,y=new Float64Array(A.size)){
     const {ptr,cols,values}=A;
+    if(A.triplets){
+      for(let i=0;i<A.size;i+=3){
+        const start=ptr[i],end=ptr[i+1],length=end-start;
+        let a=0,b=0,c=0;
+        for(let k=start;k<end;k+=3){
+          const index=cols[k],u=x[index],v=x[index+1],w=x[index+2];
+          const p=k+length,q=p+length;
+          a+=values[k]*u+values[k+1]*v+values[k+2]*w;
+          b+=values[p]*u+values[p+1]*v+values[p+2]*w;
+          c+=values[q]*u+values[q+1]*v+values[q+2]*w;
+        }
+        y[i]=a;y[i+1]=b;y[i+2]=c;
+      }
+      return y;
+    }
     for(let i=0;i<A.size;i++){
       let sum=0;for(let k=ptr[i],end=ptr[i+1];k<end;k++)sum+=values[k]*x[cols[k]];
       y[i]=sum;
