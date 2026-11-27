@@ -16,7 +16,19 @@
     .panel { padding:16px; }
     h2 { margin:0 0 12px; font-size:14px; }
     .placeholder { color:var(--muted); font-size:13px; }
-    #view { position:absolute; inset:0; }
+    #view { position:absolute; inset:0; cursor:grab; touch-action:none; }
+    fieldset { border:1px solid var(--border); border-radius:6px; margin:0 0 12px; padding:8px 10px; }
+    legend { color:var(--muted); font-size:12px; padding:0 4px; }
+    .row { display:grid; grid-template-columns:1fr 78px 34px; gap:6px; align-items:center; font-size:12.5px; margin:4px 0; }
+    .row input { width:100%; background:#0b0f15; color:var(--text); border:1px solid var(--border); border-radius:4px; padding:3px 5px; font:inherit; }
+    .row em { color:var(--muted); font-style:normal; font-size:11px; }
+    table { width:100%; border-collapse:collapse; font-size:12.5px; }
+    th { text-align:left; font-weight:400; color:var(--muted); padding:3px 0; }
+    td { text-align:right; padding:3px 0 3px 6px; font-variant-numeric:tabular-nums; }
+    td:last-child { color:var(--muted); width:28px; }
+    .warn { color:#f0b44c; font-size:12px; padding-left:16px; } .ok { color:#7ccf8a; font-size:12px; }
+    .err { color:#ff6b6b; font-size:12.5px; } .note { color:var(--muted); font-size:11.5px; line-height:1.5; }
+    aside.panel { overflow-y:auto; max-height:calc(100vh - 56px); }
     @media (max-width:900px) { main { grid-template-columns:220px minmax(260px,1fr) 220px; } }
   </style>
 </head>
@@ -25,17 +37,18 @@
   <main>
     <aside class="panel">
       <h2>입력</h2>
-      <p class="placeholder">기어 입력 조건 자리</p>
+      <div id="inputs"></div>
     </aside>
     <section aria-label="3D 화면">
       <div id="view"></div>
     </section>
     <aside class="panel">
-      <h2>결과</h2>
-      <p class="placeholder">응력·변형·안전율 결과 자리</p>
+      <h2>형상 정보</h2>
+      <div id="result"></div>
     </aside>
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="src/scaffold.js"></script>
+  <script src="src/gear.js?v=f1-1"></script>
+  <script src="src/app.js?v=f1-1"></script>
 </body>
 </html>
