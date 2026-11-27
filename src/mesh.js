@@ -64,8 +64,24 @@
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
     if(!Number.isFinite(radialGrade)||radialGrade<1)throw Error('Invalid radial grade');
     const hole=section.holes[0],radius=Math.hypot(hole[0].x,hole[0].y),tol=section.g.m*1e-8;
-    if(!(radius>0)||hole.some(p=>Math.abs(Math.hypot(p.x,p.y)-radius)>tol))throw Error('Keyways and noncircular bores need constrained triangulation');
+    if(!(radius>0))throw Error('Invalid bore radius');
+    const keyed=hole.some(p=>Math.abs(Math.hypot(p.x,p.y)-radius)>tol);
+    if(keyed&&(sectorTeeth!==null||coarsenBore))throw Error('Keyway topology requires a full gear and an uncoarsened bore');
     const angle=-(Math.PI/2+Math.PI/section.g.z),c=Math.cos(angle),s=Math.sin(angle);
+    let innerAt=()=>radius;
+    if(keyed){
+      // GearGeom.boreHole appends the two roof corners after the round arc.
+      const left=hole.at(-2),right=hole.at(-1),half=right.x,top=right.y;
+      if(!(half>0&&half<radius&&top>Math.sqrt(radius*radius-half*half))||
+        Math.abs(left.x+half)>tol||Math.abs(left.y-top)>tol||
+        hole.slice(0,-2).some(p=>Math.abs(Math.hypot(p.x,p.y)-radius)>tol)){
+        throw Error('Unrecognized keyway outline');
+      }
+      innerAt=theta=>{
+        const x=Math.cos(theta-angle),y=Math.sin(theta-angle);
+        return y>0?Math.max(radius,Math.min(top/y,half/Math.abs(x))):radius;
+      };
+    }
     let outer=section.outer.map(p=>({x:c*p.x-s*p.y,y:s*p.x+c*p.y,part:p.part}));
     if(outer.length>1&&Math.hypot(outer[0].x-outer[outer.length-1].x,outer[0].y-outer[outer.length-1].y)<tol)outer.pop();
     // Monotone polar outline is required: no undercut or radial reentry.
@@ -86,6 +102,22 @@
       for(const theta of flankKnots){const r=boundaryRadius(theta);outer.push({x:r*Math.cos(theta),y:r*Math.sin(theta),part:'involute',theta});}
       outer.sort((a,b)=>a.theta-b.theta);
     }
+    if(keyed){
+      if(!boundaryRadius)throw Error('Keyway topology requires exact tooth boundary radius');
+      const corners=[hole[0],...hole.slice(-3)];
+      outer=outer.map(p=>({...p,theta:Math.atan2(p.y,p.x)}));
+      for(const p of corners){
+        const theta=Math.atan2(s*p.x+c*p.y,c*p.x-s*p.y);
+        if(outer.some(q=>Math.abs(Math.atan2(Math.sin(q.theta-theta),Math.cos(q.theta-theta)))<1e-10))continue;
+        const r=boundaryRadius(theta);
+        const before=outer.reduce((best,q)=>{
+          const delta=(theta-q.theta+2*Math.PI)%(2*Math.PI);
+          return delta<best.delta?{q,delta}:best;
+        },{delta:Infinity}).q;
+        outer.push({x:r*Math.cos(theta),y:r*Math.sin(theta),part:before.part,theta});
+      }
+      outer.sort((a,b)=>a.theta-b.theta);
+    }
     if(resolveCurvature&&boundaryRadius){
       // Limit midside movement relative to the wall thickness of the nearest
       // radial layer, especially around the steep fillet-to-flank transition.
@@ -93,8 +125,9 @@
       function subdivide(a,b,depth){
         const theta=Math.atan2(a.y+b.y,a.x+b.x);
         const chord=Math.hypot(a.x+b.x,a.y+b.y)/2,r=boundaryRadius(theta);
-        if(!(r>radius))throw Error('Bore intersects gear outline');
-        if(Math.abs(r-chord)<.15*(r-radius)*step)return [a];
+        const thickness=r-innerAt(theta);
+        if(!(thickness>0))throw Error('Bore intersects gear outline');
+        if(Math.abs(r-chord)<.15*thickness*step)return [a];
         if(depth===10)throw Error('Surface crosses an unresolved profile transition');
         const parts=[a.part,b.part];
         const part=parts.includes('tip')?'tip':parts.includes('involute')?'involute':parts.includes('fillet')?'fillet':'root';
@@ -113,8 +146,9 @@
       for(let j=0;j<n;j++){
         if(j%stride!==0&&!(sectorTeeth&&j===n-1))continue;
         const p=outer[j],R=Math.hypot(p.x,p.y);
-        if(!(R>radius))throw Error('Bore intersects gear outline');
-        const r=R-(R-radius)*(1-k/radialLayers)**radialGrade;
+        const inner=innerAt(Math.atan2(p.y,p.x));
+        if(!(R>inner))throw Error('Bore intersects gear outline');
+        const r=R-(R-inner)*(1-k/radialLayers)**radialGrade;
         ring.set(j,points.length);points.push([p.x*r/R,p.y*r/R]);pointTags.push({ring:k,column:j});
       }
       rings.push(ring);
@@ -149,7 +183,10 @@
     const mesh=extrude(points,tri,section.g.b,widthLayers,mirrorAxial),count=points.length;
     mesh.faces=boundary(mesh,(coords,f)=>{
       const tags=f.nodes.slice(0,3).map(i=>pointTags[i%count]);
-      if(tags.every(p=>p.ring===0))return 'bore';
+      if(tags.every(p=>p.ring===0)){
+        const theta=Math.atan2(coords[0][1]+coords[1][1]+coords[2][1],coords[0][0]+coords[1][0]+coords[2][0]);
+        return innerAt(theta)>radius+tol?'keyway':'bore';
+      }
       if(sectorTeeth&&tags.every(p=>p.column===0))return 'cut:minus';
       if(sectorTeeth&&tags.every(p=>p.column===n-1))return 'cut:plus';
       if(tags.every(p=>p.ring===radialLayers)){
@@ -162,9 +199,9 @@
     });
     if(boundaryRadius){
       const updated=new Set();
-      for(const f of mesh.faces)if(f.group==='bore'||f.group.startsWith('tooth:'))for(const i of f.nodes.slice(3)){
+      for(const f of mesh.faces)if(f.group==='bore'||f.group==='keyway'||f.group.startsWith('tooth:'))for(const i of f.nodes.slice(3)){
         if(updated.has(i))continue;updated.add(i);
-        const p=mesh.nodes[i],theta=Math.atan2(p[1],p[0]),r=f.group==='bore'?radius:boundaryRadius(theta);
+        const p=mesh.nodes[i],theta=Math.atan2(p[1],p[0]),r=f.group.startsWith('tooth:')?boundaryRadius(theta):innerAt(theta);
         if(!(r>0)||!Number.isFinite(r))throw Error('Invalid boundary mapping');p[0]=r*Math.cos(theta);p[1]=r*Math.sin(theta);
       }
     }

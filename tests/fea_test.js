@@ -41,7 +41,10 @@ assert(gear.faces.some(f=>f.group==='tooth:0:plus:fillet'));
 assert(gear.faces.some(f=>f.group==='bore'));
 assert(gear.elements.every(t=>M.determinant(...t.slice(0,4).map(i=>gear.nodes[i]))>0));
 assert.throws(()=>M.gear({analyzable:false}),/not analyzable/);
-assert.throws(()=>M.gear(G.section({z:20},{bore:20,key:{w:4,t:2}})),/Keyways/);
+const keyedSection=G.section({z:20},{bore:20,key:{w:4,t:2}},{counts:{root:1,fillet:4,involute:6}});
+assert.throws(()=>M.gear(keyedSection,{sectorTeeth:5}),/Keyway topology requires a full gear/);
+const keyed=M.gear(keyedSection,{radialLayers:2,widthLayers:1,boundaryRadius:t=>G.boundaryRadius({z:20},t)});
+assert(keyed.faces.some(f=>f.group==='keyway')&&keyed.faces.some(f=>f.group==='bore'));
 console.log('Gear radial topology and face ID checks passed');
 for(const sectorTeeth of [5,7]){
   const sector=M.gear(G.section({z:20},{bore:20},{counts:{root:1,fillet:3,involute:4},nTip:2}),{sectorTeeth,radialLayers:2,widthLayers:2});

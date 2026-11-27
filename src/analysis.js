@@ -49,6 +49,7 @@
     const {E=206000,nu=.3,sectorTeeth=5,radialLayers=2,widthLayers=6,radialGrade=2,coarsenBore=false,
       counts={root:1,fillet:4,involute:6},backgroundCounts=null,cutFixed=false,preconditioner='jacobi',axialSymmetry=false,mirrorAxial=false,resolveCurvature=false,...loading}=options;
     const g=G.basic(p);
+    if(body.key?.w>0&&body.key?.t>0)throw Error('Keyway contact and restraint are not supported');
     if(!Number.isInteger(g.z)||g.z<3||g.z>300||![g.m,g.b,g.ha,g.hf].every(v=>Number.isFinite(v)&&v>0)
       ||!(g.alpha>0&&g.alpha<90)||!Number.isFinite(g.x)||!(g.rho>0)||!(body.bore>0))
       throw Error('잘못된 기어 또는 보어 치수입니다.');
