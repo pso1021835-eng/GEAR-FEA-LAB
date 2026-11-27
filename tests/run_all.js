@@ -1,7 +1,7 @@
 // 전체 테스트 실행 (CI)
 const { execFileSync } = require('child_process');
 const path = require('path');
-const tests = ['gear_test.js'];
+const tests = ['gear_test.js', 'fea_test.js'];
 let failed = 0;
 for (const t of tests) {
   try { process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, t)], { encoding: 'utf8' })); }

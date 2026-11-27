@@ -107,14 +107,39 @@
         ['기초원 지름 db', f(inf.db), 'mm'], ['피치원 원호 이두께', f(inf.sPitch), 'mm'], ['기초 피치 pb', f(inf.pb), 'mm'],
         ['림 두께 (이뿌리원~구멍)', sec.rim == null ? '—' : f(sec.rim, 2), 'mm'], ['언더컷 한계 잇수(근사)', f(inf.zUndercutApprox, 1), '']
       ];
+      const hasCircularBore = body.bore > 0 && !(body.key.w > 0 && body.key.t > 0) && !(body.web.n > 0 && body.web.d > 0);
+      const canAnalyze = sec.analyzable && hasCircularBore;
       out.innerHTML = `<table>${rows.map(r => `<tr><th>${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table>` +
-        `<p class="${sec.analyzable ? 'ok' : 'err'}">FEA 해석 대상: ${sec.analyzable ? '가능' : '불가 (아래 형상 문제 해결 필요)'}</p>` +
+        `<p class="${canAnalyze ? 'ok' : 'err'}">FEA 해석 대상: ${canAnalyze ? '가능' : '형상 또는 보어 설정 확인 필요'}</p>` +
         (sec.warns.length ? `<ul class="warn">${sec.warns.map(w => `<li>${w}</li>`).join('')}</ul>` : '') +
-        '<p class="note">치형: 랙 공구 창성(인벌류트 + 트로코이드 필렛). 스퍼 기어만 지원(헬리컬은 이후 단계). 응력 해석(FEA)은 다음 단계에서 추가됩니다.</p>';
+        '<p class="note">랙 공구로 창성한 외접 스퍼 기어입니다. 해석하려면 키홈 폭과 웨브 구멍 수를 0으로 설정하세요.</p>';
     } catch (e) {
       out.innerHTML = `<p class="err">형상 오류: ${e.message}</p>`;
     }
   }
 
-  window.addEventListener('DOMContentLoaded', () => { buildForm(); init3D(); update(); });
+  function bindFEA(){
+    const button=$('run-fea'),output=$('fea-result');
+    let worker;
+    function clear(){if(worker){worker.terminate();worker=null;}button.disabled=false;output.textContent='';}
+    for(const id of ['inputs','mate-teeth','torque'])$(id).addEventListener('input',clear);
+    button.addEventListener('click',()=>{
+      clear();
+      const {gear,body}=params(),mateTeeth=Number($('mate-teeth').value),torqueNm=Number($('torque').value);
+      if(!Number.isInteger(mateTeeth)||mateTeeth<3||!(torqueNm>0)){output.textContent='맞물림 잇수와 양의 토크를 입력하세요.';return;}
+      if(!(body.bore>0)||(body.key.w>0&&body.key.t>0)||(body.web.n>0&&body.web.d>0)){
+        output.textContent='원형 보어를 입력하고 키홈과 웨브 구멍을 해제하세요.';return;
+      }
+      button.disabled=true;output.textContent='해석 중…';
+      try{worker=new Worker('src/analysis_worker.js');}catch(error){clear();output.textContent='해석 실행에는 HTTP로 연 페이지가 필요합니다.';return;}
+      worker.onmessage=({data})=>{
+        clear();
+        if(data.error){output.textContent=data.error;return;}
+        output.textContent='치근 중앙폭 최대주응력 '+f(data.rootMPa,2)+' MPa · 요소 중심 최대 von Mises '+f(data.vmMPa,2)+' MPa. 5치 섹터, 보어 고정, 자유 절단면, 치폭 중앙면 대칭, E=206 GPa, ν=0.30. 메시 수렴 미확인. 공학적 추정. 시험을 통한 확인 필요.';
+      };
+      worker.onerror=()=>{clear();output.textContent='해석 실행 환경을 불러오지 못했습니다.';};
+      worker.postMessage({gear,body,options:{mateTeeth,torqueNm}});
+    });
+  }
+  window.addEventListener('DOMContentLoaded', () => { buildForm(); bindFEA(); init3D(); update(); });
 })();
