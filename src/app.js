@@ -135,7 +135,7 @@
       worker.onmessage=({data})=>{
         clear();
         if(data.error){output.textContent=data.error;return;}
-        output.textContent='치근 중앙폭 최대주응력 '+f(data.rootMPa,2)+' MPa · 요소 중심 최대 von Mises '+f(data.vmMPa,2)+' MPa. 5치 섹터, 보어 고정, 자유 절단면, E=206 GPa, ν=0.30. 메시 수렴 미확인. 공학적 추정. 시험을 통한 확인 필요.';
+        output.textContent='치근 중앙폭 최대주응력 '+f(data.rootMPa,2)+' MPa · 요소 중심 최대 von Mises '+f(data.vmMPa,2)+' MPa. 5치 섹터, 보어 고정, 자유 절단면, 치폭 중앙면 대칭, E=206 GPa, ν=0.30. 메시 수렴 미확인. 공학적 추정. 시험을 통한 확인 필요.';
       };
       worker.onerror=()=>{clear();output.textContent='해석 실행 환경을 불러오지 못했습니다.';};
       worker.postMessage({gear,body,options:{mateTeeth,torqueNm}});

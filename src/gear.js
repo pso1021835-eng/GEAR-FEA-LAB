@@ -215,6 +215,20 @@
     let lo=Math.max(g.rb,Math.hypot(...end)),hi=g.ra;
     for(let i=0;i<50;i++){const mid=(lo+hi)/2;if(pitch/2-involuteHalfAngle(g,mid)<delta)lo=mid;else hi=mid;}return (lo+hi)/2;
   }
-  const api = { basic, halfSpace, resampleHalf, outline, info, involuteHalfAngle, boreHole, section, boundaryRadius };
+  function filletMinRadius(p){
+    const g=basic(p),rho=g.rho*g.m,yc=g.rf+rho;
+    let minimum=Infinity;
+    for(let i=0;i<=256;i++){
+      const t=-Math.PI/2+(Math.PI/2-g.alphaRad)*i/256;
+      const sin=Math.sin(t),cos=Math.cos(t),py=yc+rho*sin,dy=rho*cos;
+      const u=(py-g.r)*cos/sin,du=dy*cos/sin-(py-g.r)/(sin*sin);
+      const dw=(du+rho*sin)/g.r;
+      const speed=Math.hypot(du-py*dw,dy+u*dw);
+      const radius=speed/Math.abs(1+dw);
+      minimum=Math.min(minimum,radius);
+    }
+    return minimum;
+  }
+  const api = { basic, halfSpace, resampleHalf, outline, info, involuteHalfAngle, boreHole, section, boundaryRadius, filletMinRadius };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GearGeom = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

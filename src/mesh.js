@@ -21,15 +21,17 @@
     });
     return {nodes,elements,type:'TET10',edgeOrder:edges};
   }
-  function extrude(points, triangles, width, layers=6) {
+  function extrude(points, triangles, width, layers=6, mirrorAxial=false) {
     if(!(width>0)||!Number.isInteger(layers)||layers<1) throw Error('Invalid extrusion');
     if(points.some(p=>p.length!==2||p.some(x=>!Number.isFinite(x)))) throw Error('Invalid 2D coordinates');
     const vertices=[],tets=[],n=points.length;
+    if(mirrorAxial&&layers%2!==0)throw Error('Mirrored extrusion requires an even layer count');
     for(let k=0;k<=layers;k++) for(const p of points) vertices.push([p[0],p[1],width*(k/layers-.5)]);
     for(let k=0;k<layers;k++) for(const tri of triangles) {
       if(tri.length!==3||tri.some(i=>!Number.isInteger(i)||i<0||i>=n)||new Set(tri).size!==3) throw Error('Invalid triangle');
       // Global vertex ordering gives the same diagonal on every shared prism face.
-      const [a,b,c]=tri.slice().sort((x,y)=>x-y).map(i=>i+k*n), A=a+n,B=b+n,C=c+n;
+      const flip=mirrorAxial&&k<layers/2,first=flip?k+1:k,step=flip?-n:n;
+      const [a,b,c]=tri.slice().sort((x,y)=>x-y).map(i=>i+first*n), A=a+step,B=b+step,C=c+step;
       tets.push([a,b,c,C],[a,b,B,C],[a,A,B,C]);
     }
     return elevate(vertices,tets);
@@ -56,7 +58,7 @@
     }
     return out;
   }
-  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[],coarsenBore=false}={}){
+  function gear(section,{radialLayers=4,widthLayers=6,sectorTeeth=null,boundaryRadius=null,radialGrade=1,flankKnots=[],coarsenBore=false,mirrorAxial=false}={}){
     if(!section.analyzable)throw Error('Geometry not analyzable');
     if(section.holes.length!==1)throw Error('Only single circular bore supported by radial mesher');
     if(!Number.isInteger(radialLayers)||radialLayers<1)throw Error('Invalid radial layers');
@@ -97,6 +99,10 @@
       }
       rings.push(ring);
     }
+    const area=(i,j,k)=>{
+      const [a,b,c]=[points[i],points[j],points[k]];
+      return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    };
     for(let k=0;k<radialLayers;k++){
       const inner=rings[k],outerRing=rings[k+1],keys=[...inner.keys()];
       if(!sectorTeeth)keys.push(n);
@@ -104,16 +110,23 @@
         const first=keys[i],last=keys[i+1],a=inner.get(first),d=inner.get(last%n);
         const columns=[];
         for(let j=first;j<=last;j++)if(outerRing.has(j%n))columns.push(outerRing.get(j%n));
-        for(let j=0;j<columns.length-1;j++)tri.push([a,columns[j],columns[j+1]]);
-        tri.push([a,columns.at(-1),d]);
+        let best=null;
+        // Coarse-to-fine angular transitions can cut across a steep flank.
+        // Try the admissible bridges in the local strip and retain positive area.
+        for(let bridge=columns.length-1;bridge>=0;bridge--){
+          const candidate=[];
+          for(let j=0;j<bridge;j++)candidate.push([a,columns[j],columns[j+1]]);
+          candidate.push([a,columns[bridge],d]);
+          for(let j=bridge;j<columns.length-1;j++)candidate.push([d,columns[j],columns[j+1]]);
+          const min=Math.min(...candidate.map(t=>area(...t)));
+          if(min>0&&(!best||min>best.min))best={candidate,min};
+          if(best&&columns.length===2)break;
+        }
+        if(!best)throw Error('Radial triangulation overlaps or degenerates');
+        tri.push(...best.candidate);
       }
     }
-    for(const [i,j,k] of tri){
-      const [a,b,c]=[points[i],points[j],points[k]];
-      const twiceArea=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
-      if(!(twiceArea>0))throw Error('Radial triangulation overlaps or degenerates');
-    }
-    const mesh=extrude(points,tri,section.g.b,widthLayers),count=points.length;
+    const mesh=extrude(points,tri,section.g.b,widthLayers,mirrorAxial),count=points.length;
     mesh.faces=boundary(mesh,(coords,f)=>{
       const tags=f.nodes.slice(0,3).map(i=>pointTags[i%count]);
       if(tags.every(p=>p.ring===0))return 'bore';

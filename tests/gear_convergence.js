@@ -9,7 +9,7 @@ function sample(radialLayers,fillet,involute,sectorTeeth=5,cutFixed=false){
     rootMPa:r.root.central.maxPrincipal,filletSide:r.root.central.side,
     displacementMm:r.loadDisplacement,patchMeanDisplacementMm:r.patchMeanDisplacement,
     forceError:r.forceError,momentError:r.momentError,
-    cutTorqueNmm:r.cutTorque}));
+    cutTorqueNmm:r.cutTorque,meshMetrics:r.meshMetrics}));
   return r;
 }
 sample(2,3,4);
