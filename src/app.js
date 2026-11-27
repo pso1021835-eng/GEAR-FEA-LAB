@@ -78,7 +78,10 @@
   }
 
   function showGear(sec, b) {
-    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); scene.remove(edges); edges.geometry.dispose(); }
+    if (mesh) {   // 이전 형상의 GPU 자원(기하·재질) 해제
+      scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose();
+      scene.remove(edges); edges.geometry.dispose(); edges.material.dispose();
+    }
     const geo = new THREE.ExtrudeGeometry(toShape(sec), { depth: b, bevelEnabled: false, curveSegments: 1 });
     geo.translate(0, 0, -b / 2); geo.rotateX(-Math.PI / 2);          // 기어 축 = 화면 위(+Y)
     geo.computeVertexNormals();
